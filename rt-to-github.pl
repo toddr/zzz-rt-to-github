@@ -63,6 +63,11 @@ sub _dist_name {
 
 sub _find_from {
     my ( $xact ) = @_;
+
+    if ( $xact->creator =~ m{^https?://} ) {
+	return sprintf("From %s on %s:", $xact->creator, $xact->created);
+    }
+
     my $user = $user_cache{ $xact->creator } ||= RT::Client::REST::User->new(
         id => $xact->creator,
         rt => $xact->rt,
@@ -120,6 +125,7 @@ my @rt_tickets = $rt->search(
 );
 
 TICKET: for my $id (@rt_tickets) {
+    print "Importing RT #$id\n";
 
     # maybe only a single ticket
     next TICKET if $ticket && $id != $ticket;
@@ -163,10 +169,12 @@ TICKET: for my $id (@rt_tickets) {
         my $attach_list = join( "", map { "* $_\n" } @attach_links );
         $body .= "\nAttachments:\n$attach_list\n";
     }
-
     # initial ticket text
+
     my $create = $ticket->transactions( type => 'Create' )->get_iterator->();
+
     my $op = _find_from($create);
+
     $body .= sprintf( "\n$op\n```\n%s\n```\n", $create->content );
 
     # subsequent ticket discussion
@@ -175,7 +183,6 @@ TICKET: for my $id (@rt_tickets) {
         my $from = _find_from($c);
         $body .= sprintf( "\n$from\n```\n%s\n```\n", $c->content );
     }
-
 
     if ( $dry_run ) {
         say "ticket #$id ($trunc_subject) would be copied to github as:";
@@ -186,6 +193,7 @@ TICKET: for my $id (@rt_tickets) {
         utf8::encode($subject);
         utf8::encode($body);
         my $isu;
+
         try {
             $isu = $gh_issue->create_issue(
                 {
